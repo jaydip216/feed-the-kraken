@@ -1,0 +1,130 @@
+/* Feed the Kraken — nautical theme.
+   All motion is CSS transform/opacity only (GPU friendly, safe on old phones),
+   and every animation is disabled under prefers-reduced-motion. */
+@import url('https://fonts.googleapis.com/css2?family=Pirata+One&family=IM+Fell+English:ital@0;1&display=swap');
+
+:root{
+  --sea-0:#071a26; --sea:#0e2a3a; --sea-2:#14374b; --sea-3:#1c4a63; --sea-4:#2a5c78;
+  --parch:#f2e3c6; --parch-2:#e6d2ab; --parch-3:#d9c69a; --ink:#3a2a17; --ink-2:#7a6a4f;
+  --gold:#c8992e; --gold-2:#e0b64a; --gold-3:#8a6a1c;
+  --sailor:#2f7fd0; --pirate:#c0392b; --cult:#c8a11e; --cultist:#4a9e5e;
+  --muted:#9db3bf;
+  --radius:12px;
+  --display:'Pirata One', 'Papyrus', fantasy;
+  --serif:'IM Fell English', Georgia, serif;
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0; color:var(--parch);
+  background:
+    radial-gradient(ellipse at 50% -10%, #1a4864 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 110%, #10303f 0%, transparent 55%),
+    var(--sea-0);
+  background-attachment:fixed;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+/* faint drifting swell behind everything */
+body::before{
+  content:''; position:fixed; inset:-20%; pointer-events:none; z-index:0; opacity:.05;
+  background-image:repeating-linear-gradient(115deg,transparent 0 38px,#9fd8f0 38px 40px);
+  animation:swell 26s linear infinite;
+}
+@keyframes swell{to{transform:translate3d(-80px,-46px,0)}}
+#root{position:relative; z-index:1}
+
+button{font-family:inherit;cursor:pointer}
+h1,h2,.display{font-family:var(--display);font-weight:400;letter-spacing:.5px}
+
+.wrap{max-width:1040px;margin:0 auto;padding:16px}
+.wrap-wide{max-width:1800px;margin:0 auto;padding:18px 24px}
+.center{text-align:center}
+.muted{color:var(--muted)}
+.h1{font-family:var(--display);font-size:38px;margin:0;color:var(--gold-2);text-shadow:0 2px 0 #00000055}
+.h2{font-family:var(--display);font-size:24px;margin:0;letter-spacing:.5px}
+.sub{color:var(--muted);font-size:13px;margin:4px 0 0}
+.quote{font-family:var(--serif);font-style:italic;color:var(--parch-3)}
+
+/* parchment card */
+.card{
+  background:linear-gradient(#f6ead2,#e7d4ad);
+  color:var(--ink); border-radius:var(--radius); padding:16px;
+  border:1px solid #b9a171; box-shadow:0 6px 18px #00000055, inset 0 1px 0 #fff8;
+}
+.panel{
+  background:linear-gradient(180deg,#12394d,#0d2c3c);
+  border:1px solid var(--sea-4); border-radius:var(--radius); padding:14px;
+  box-shadow:0 6px 18px #00000044;
+}
+.rope{border:2px solid transparent;border-image:repeating-linear-gradient(45deg,#b9915a 0 6px,#8a6a3c 6px 12px) 2}
+
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;font-weight:700}
+.chip-code{background:var(--gold);color:#2a1e07;font-weight:700;letter-spacing:5px;font-size:22px;padding:6px 16px;border-radius:10px;display:inline-block}
+
+.btn{
+  display:inline-block;border:0;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:700;
+  background:linear-gradient(#e0b64a,#b8871f);color:#2a1e07;border:1px solid #6d5210;
+  box-shadow:0 3px 0 #00000055; transition:transform .12s ease, filter .12s ease;
+}
+.btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(2px);box-shadow:0 1px 0 #00000055}
+.btn.block{display:block;width:100%}
+.btn.ghost{background:transparent;border:1.5px solid var(--gold);color:var(--gold-2);box-shadow:none}
+.btn.danger{background:linear-gradient(#d1503f,#9c2a1e);color:#fff;border-color:#6b1a11}
+.btn.lock{background:linear-gradient(#4a97e0,#245f9c);color:#fff;border-color:#17436f}
+.btn.big{font-size:19px;padding:16px 26px}
+.btn:disabled{opacity:.45;filter:grayscale(.4);cursor:not-allowed;box-shadow:none}
+
+.input{width:100%;border:1px solid var(--parch-3);border-radius:8px;padding:12px;font-size:16px;color:var(--ink);background:#fffdf6}
+
+.seat{display:flex;align-items:center;gap:10px;background:#ffffff10;padding:10px 12px;border-radius:10px;margin-bottom:7px;border:1px solid #ffffff14}
+.seat.click{cursor:pointer;transition:background .12s,border-color .12s}
+.seat.click:hover{background:#ffffff1c;border-color:var(--gold)}
+.num{width:24px;height:24px;border-radius:50%;background:var(--gold);color:#2a1e07;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+
+.badge{font-size:10px;padding:2px 8px;border-radius:12px;font-weight:700;white-space:nowrap}
+.b-cap{background:var(--gold);color:#2a1e07} .b-lt{background:#8a6d3b;color:#fff}
+.b-nav{background:#5a4a7a;color:#fff} .b-off{background:#6b3a3a;color:#fff}
+.b-dead{background:#444;color:#bbb} .b-mute{background:#5a3a5a;color:#fff}
+
+.log{font-family:var(--serif);font-size:13px;color:var(--muted);line-height:1.75}
+.topbar{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted);
+  padding-bottom:10px;border-bottom:1px solid var(--sea-4);margin-bottom:14px}
+.secret{background:#00000055;border:1px dashed var(--sea-4);border-radius:var(--radius);padding:16px;text-align:center}
+.phone{max-width:440px;margin:0 auto}
+
+.faction-sailor{background:var(--sailor);color:#fff}
+.faction-pirate{background:var(--pirate);color:#fff}
+.faction-cultLeader{background:var(--cult);color:#2a1e07}
+.faction-cultist{background:var(--cultist);color:#fff}
+
+/* navigation card */
+.navcard{
+  position:relative;border-radius:12px;padding:14px 10px;text-align:center;color:#fff;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  border:3px solid transparent;cursor:pointer;transition:transform .14s ease,box-shadow .14s ease,border-color .14s;
+  box-shadow:0 4px 10px #00000055;
+}
+.navcard:hover{transform:translateY(-3px)}
+.navcard.sel{border-color:var(--gold-2);transform:translateY(-5px);box-shadow:0 10px 22px #000000aa}
+.navcard .sym{font-size:30px;line-height:1}
+.navcard .dir{font-weight:800;font-size:13px;margin-top:4px}
+.navcard .act{font-size:12px;opacity:.92}
+.navcard .txt{font-size:11px;opacity:.88;margin-top:6px;line-height:1.45}
+
+/* animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.86);opacity:0}70%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}}
+@keyframes flip{from{transform:rotateY(90deg);opacity:0}to{transform:rotateY(0);opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+@keyframes drop{from{transform:translateY(-18px) rotate(-8deg);opacity:0}to{transform:none;opacity:1}}
+.anim-in{animation:fadeUp .32s ease both}
+.anim-pop{animation:pop .3s ease both}
+.anim-flip{animation:flip .45s ease both}
+.anim-drop{animation:drop .35s ease both}
+.pulsing{animation:pulse 1.6s ease-in-out infinite}
+.ship-move{transition:transform .85s cubic-bezier(.45,.05,.25,1)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}

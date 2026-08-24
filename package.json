@@ -1,0 +1,19 @@
+{
+  "name": "feed-the-kraken",
+  "private": true,
+  "version": "0.1.0",
+  "description": "In-room digital companion for the board game Feed the Kraken",
+  "workspaces": ["shared", "server", "client"],
+  "scripts": {
+    "build:shared": "npm run build -w shared",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "dev": "npm run build:shared && concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm run build:shared && npm run build -w client && npm run build -w server",
+    "start": "node server/dist/index.js",
+    "test": "npm run test -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
