@@ -51,16 +51,39 @@ export interface MapDef {
   supplyLineLevel: number;
 }
 
-// Each layer: the two half-levels it spans, and how far out its columns reach.
-const LAYERS: { levels: number[]; halfWidth: number }[] = [
-  { levels: [0], halfWidth: 0 },          // 1
-  { levels: [1, 2], halfWidth: 1 },       // 3
-  { levels: [3, 4], halfWidth: 1 },       // 3
-  { levels: [5, 6], halfWidth: 2 },       // 5
-  { levels: [7, 8], halfWidth: 2 },       // 5
-  { levels: [9, 10], halfWidth: 3 },      // 7
-  { levels: [11, 12], halfWidth: 3 },     // 7
-];
+export const HEX_COORDS: Record<number, { col: number; level: number; layer: number }> = {
+  1:  { col:  0, level:  0, layer: 0 },
+  2:  { col: -1, level:  1, layer: 1 },
+  3:  { col:  0, level:  2, layer: 1 },
+  4:  { col:  1, level:  1, layer: 1 },
+  5:  { col: -1, level:  3, layer: 2 },
+  6:  { col:  0, level:  4, layer: 2 },
+  7:  { col:  1, level:  3, layer: 2 },
+  8:  { col: -2, level:  4, layer: 3 },
+  9:  { col: -1, level:  5, layer: 3 },
+  10: { col:  0, level:  6, layer: 3 },
+  11: { col:  1, level:  5, layer: 3 },
+  12: { col:  2, level:  4, layer: 3 },
+  13: { col: -2, level:  6, layer: 4 },
+  14: { col: -1, level:  7, layer: 4 },
+  15: { col:  0, level:  8, layer: 4 },
+  16: { col:  1, level:  7, layer: 4 },
+  17: { col:  2, level:  6, layer: 4 },
+  18: { col: -3, level:  7, layer: 5 },
+  19: { col: -2, level:  8, layer: 5 },
+  20: { col: -1, level:  9, layer: 5 },
+  21: { col:  0, level: 10, layer: 5 },
+  22: { col:  1, level:  9, layer: 5 },
+  23: { col:  2, level:  8, layer: 5 },
+  24: { col:  3, level:  7, layer: 5 },
+  25: { col: -3, level:  9, layer: 6 },
+  26: { col: -2, level: 10, layer: 6 },
+  27: { col: -1, level: 11, layer: 6 },
+  28: { col:  0, level: 12, layer: 6 },
+  29: { col:  1, level: 11, layer: 6 },
+  30: { col:  2, level: 10, layer: 6 },
+  31: { col:  3, level:  9, layer: 6 },
+};
 
 const ICONS: Record<number, MapActionIcon> = {
   5: 'cabinSearch', 6: 'cabinSearch', 7: 'cabinSearch', 8: 'cabinSearch',
@@ -77,31 +100,31 @@ const SUPPLY_LINE_LEVEL = 7;
 
 function buildMap(): MapDef {
   const hexes: Hex[] = [];
-  const layers: number[][] = [];
-  let n = 0;
-  LAYERS.forEach((spec, layer) => {
-    // gather this band's spaces, then number them left to right across the zig-zag
-    const band: { col: number; level: number }[] = [];
-    for (const level of spec.levels) {
-      for (let col = -spec.halfWidth; col <= spec.halfWidth; col++) {
-        if ((((col + level) % 2) + 2) % 2 !== 0) continue;   // flat-top packing
-        band.push({ col, level });
-      }
-    }
-    band.sort((a, b) => a.col - b.col);
-    const nums: number[] = [];
-    for (const b of band) {
-      n += 1;
-      nums.push(n);
-      hexes.push({
-        id: String(n), n, col: b.col, level: b.level, layer,
-        icon: ICONS[n], victory: VICTORY[n],
-        start: n === 1,
-        beyondSupplyLine: b.level >= SUPPLY_LINE_LEVEL,
-      });
-    }
-    layers.push(nums);
-  });
+  const layers: number[][] = [
+    [1],
+    [2, 3, 4],
+    [5, 6, 7],
+    [8, 9, 10, 11, 12],
+    [13, 14, 15, 16, 17],
+    [18, 19, 20, 21, 22, 23, 24],
+    [25, 26, 27, 28, 29, 30, 31],
+  ];
+
+  for (let n = 1; n <= 31; n++) {
+    const coord = HEX_COORDS[n];
+    hexes.push({
+      id: String(n),
+      n,
+      col: coord.col,
+      level: coord.level,
+      layer: coord.layer,
+      icon: ICONS[n],
+      victory: VICTORY[n],
+      start: n === 1,
+      beyondSupplyLine: coord.level >= SUPPLY_LINE_LEVEL,
+    });
+  }
+
   const levels = Math.max(...hexes.map(h => h.level));
   return { id: 'standard', levels, layers, hexes, startId: '1', supplyLineLevel: SUPPLY_LINE_LEVEL };
 }
@@ -120,25 +143,39 @@ export function victoryHexes(map: MapDef): Hex[] { return map.hexes.filter(h => 
 
 export type MoveTarget = { kind: 'hex'; id: string };
 
-// The three upward edges of a flat-top space. Where the shore cuts the board off,
-// the coast turns the ship to the nearest space on that level.
+export const BOARD_MOVES: Record<number, Record<Direction, number>> = {
+  1:  { west: 2,  north: 3,  east: 4 },
+  2:  { west: 5,  north: 5,  east: 3 },
+  3:  { west: 5,  north: 6,  east: 7 },
+  4:  { west: 3,  north: 7,  east: 7 },
+  5:  { west: 8,  north: 9,  east: 6 },
+  6:  { west: 9,  north: 9, east: 11 },
+  7:  { west: 6, north: 11, east: 12 },
+  8:  { west: 13, north: 13, east: 9 },
+  9:  { west: 13, north: 14, east: 10 },
+  10: { west: 14, north: 15, east: 16 },
+  11: { west: 10, north: 16, east: 17 },
+  12: { west: 11, north: 17, east: 17 },
+  13: { west: 18, north: 19, east: 14 },
+  14: { west: 19, north: 20, east: 15 },
+  15: { west: 20, north: 21, east: 22 },
+  16: { west: 15, north: 22, east: 23 },
+  17: { west: 16, north: 23, east: 24 },
+  18: { west: 25, north: 19, east: 19 },
+  19: { west: 26, north: 20, east: 20 },
+  20: { west: 26, north: 27, east: 21 },
+  21: { west: 27, north: 28, east: 29 },
+  22: { west: 21, north: 29, east: 30 },
+  23: { west: 22, north: 22, east: 30 },
+  24: { west: 23, north: 23, east: 31 },
+};
+
+// Movement lookup directly follows the official board arrows and navigation tracks.
 export function move(map: MapDef, fromId: string, dir: Direction): MoveTarget {
-  const from = getHex(map, fromId)!;
-  const target = dir === 'north' ? { col: from.col, level: from.level + 2 }
-    : dir === 'west' ? { col: from.col - 1, level: from.level + 1 }
-    : { col: from.col + 1, level: from.level + 1 };
-
-  const exact = hexAt(map, target.col, target.level);
-  if (exact) return { kind: 'hex', id: exact.id };
-
-  const onLevel = map.hexes.filter(h => h.level === target.level);
-  if (!onLevel.length) return { kind: 'hex', id: fromId };   // the shore blocks the way
-  let best = onLevel[0], bestD = Infinity;
-  for (const h of onLevel) {
-    const d = Math.abs(h.col - target.col);
-    if (d < bestD) { bestD = d; best = h; }
-  }
-  return { kind: 'hex', id: best.id };
+  const n = Number(fromId);
+  const next = BOARD_MOVES[n]?.[dir];
+  if (next) return { kind: 'hex', id: String(next) };
+  return { kind: 'hex', id: fromId };
 }
 
 export function exitsOf(map: MapDef, id: string): Record<Direction, MoveTarget> {

@@ -1,7 +1,7 @@
 import type { Direction } from '@ftk/shared';
 import {
   THE_MAP, hexPixel, mapBounds, getHex, seaHexes, victoryHexes, move,
-  VICTORY_LABEL, VICTORY_BANNER, MAP_ACTIONS, DIRECTIONS,
+  VICTORY_LABEL, VICTORY_BANNER, MAP_ACTIONS, DIRECTIONS, BOARD_MOVES,
 } from '@ftk/shared';
 
 const VICT_STYLE: Record<string, { fill: string; edge: string; ink: string }> = {
@@ -9,6 +9,8 @@ const VICT_STYLE: Record<string, { fill: string; edge: string; ink: string }> = 
   pirate: { fill: '#a52a1e', edge: '#f4b8ad', ink: '#fff0ec' },
   sailor: { fill: '#1c4f86', edge: '#bcdcff', ink: '#eef7ff' },
 };
+
+const H = Math.sqrt(3) / 2;
 
 // flat-top hexagon — the packing the printed board uses, edge to edge, no gaps
 function hexPath(cx: number, cy: number, s: number): string {
@@ -20,18 +22,73 @@ function hexPath(cx: number, cy: number, s: number): string {
   return `M${p.join('L')}Z`;
 }
 
-// arrows sit on the three upward edges of a flat-top space, aimed where that card leads
-const H = Math.sqrt(3) / 2;
-function Arrow({ cx, cy, dir, s }: { cx: number; cy: number; dir: Direction; s: number }) {
-  const dx = dir === 'west' ? -0.75 * s * 0.8 : dir === 'east' ? 0.75 * s * 0.8 : 0;
-  const dy = dir === 'north' ? -H * s * 0.78 : -(H / 2) * s * 0.8;
-  const rot = dir === 'north' ? 0 : dir === 'west' ? -60 : 60;
-  const a = s * 0.17;
+function HexArrows({ hex, map, s }: { hex: { id: string; col: number; level: number }; map: typeof THE_MAP; s: number }) {
+  const p = hexPixel(hex.col, hex.level, s);
+  const n = Number(hex.id);
+  const moves = BOARD_MOVES[n];
+  if (!moves) return null;
+
+  const dirs: Direction[] = ['west', 'north', 'east'];
+
+  // Group directions by target hex
+  const targetMap: Record<number, Direction[]> = {};
+  for (const d of dirs) {
+    const t = moves[d];
+    if (!t) continue;
+    if (!targetMap[t]) targetMap[t] = [];
+    targetMap[t].push(d);
+  }
+
+  const targetGroups: { targetId: number; targetHex: NonNullable<ReturnType<typeof getHex>>; dirs: Direction[] }[] = [];
+  for (const [tStr, dList] of Object.entries(targetMap)) {
+    const targetId = Number(tStr);
+    const targetHex = getHex(map, String(targetId));
+    if (targetHex) {
+      targetGroups.push({ targetId, targetHex, dirs: dList });
+    }
+  }
+
+  const a = s * 0.16;
+  const baseDist = s * 0.70;
+
   return (
-    <g transform={`translate(${cx + dx},${cy + dy}) rotate(${rot})`}>
-      <path d={`M0,${-a * 1.15} L${a},${a * 0.72} L0,${a * 0.32} L${-a},${a * 0.72} Z`}
-        fill={DIRECTIONS[dir].color} stroke="#fdf6e6" strokeWidth={s * 0.026} strokeLinejoin="round" />
-    </g>
+    <>
+      {targetGroups.map(({ targetId, targetHex, dirs: groupDirs }) => {
+        const tp = hexPixel(targetHex.col, targetHex.level, s);
+        const dx = tp.x - p.x;
+        const dy = tp.y - p.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const px = -uy;
+        const py = ux;
+        const rot = (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
+
+        return groupDirs.map((dir, i) => {
+          let shift = 0;
+          if (groupDirs.length === 2) {
+            shift = (i === 0 ? -0.16 : 0.16) * s;
+          } else if (groupDirs.length > 2) {
+            shift = (i - (groupDirs.length - 1) / 2) * 0.22 * s;
+          }
+
+          const ax = p.x + ux * baseDist + px * shift;
+          const ay = p.y + uy * baseDist + py * shift;
+
+          return (
+            <g key={`${dir}-${targetId}`} transform={`translate(${ax},${ay}) rotate(${rot})`}>
+              <path
+                d={`M0,${-a * 1.15} L${a},${a * 0.72} L0,${a * 0.32} L${-a},${a * 0.72} Z`}
+                fill={DIRECTIONS[dir].color}
+                stroke="#fdf6e6"
+                strokeWidth={s * 0.026}
+                strokeLinejoin="round"
+              />
+            </g>
+          );
+        });
+      })}
+    </>
   );
 }
 
@@ -131,7 +188,7 @@ export function HexMap({ shipSpace, size = 30, showNumbers = false }:
               fill="#06303f" opacity={0.85} fontWeight={700}>START</text>}
             {showNumbers && <text x={p.x} y={p.y - s * 0.42} textAnchor="middle" fontSize={s * 0.26}
               fill="#06303f" opacity={0.55}>{h.n}</text>}
-            {(['west', 'north', 'east'] as Direction[]).map(d => <Arrow key={d} cx={p.x} cy={p.y} dir={d} s={s} />)}
+            <HexArrows hex={h} map={map} s={s} />
           </g>
         );
       })}
