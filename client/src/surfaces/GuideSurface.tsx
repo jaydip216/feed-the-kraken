@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FACTIONS, DIRECTIONS, NAV_ACTIONS, MAP_ACTIONS, CULT_RITUALS,
-  MOVEMENT_STEPS, SYMBOLS, TIPS, THE_MAP,
+  MOVEMENT_STEPS, SYMBOLS, TIPS, THE_MAP, DECKS,
 } from '@ftk/shared';
 import type { Faction } from '@ftk/shared';
 import { HexMap } from './HexMap.js';
@@ -143,8 +143,64 @@ function Round() {
 }
 
 function Cards() {
+  const deck = DECKS.standard;
+  const totalCards = deck.reduce((acc, c) => acc + c.count, 0);
+
+  const byDir = (['west', 'north', 'east'] as const).map(d => ({
+    dir: d,
+    meta: DIRECTIONS[d],
+    cards: deck.filter(c => c.direction === d),
+    count: deck.filter(c => c.direction === d).reduce((s, c) => s + c.count, 0),
+  }));
+
   return (
     <>
+      <Section title={`Navigation Deck Composition (Long Journey — ${totalCards} Cards)`}>
+        <p className="sub" style={{ marginBottom: 14, fontSize: 14 }}>
+          The navigation deck consists of <b>{totalCards} cards</b> divided across the three course directions:
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 16 }}>
+          {byDir.map(({ dir, meta, cards, count }) => (
+            <div key={dir} style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${meta.color}44`,
+              borderTop: `3px solid ${meta.color}`,
+              borderRadius: 8,
+              padding: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6 }}>
+                <span style={{ fontWeight: 700, color: meta.color, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{meta.symbol}</span> {meta.label} ({meta.dest})
+                </span>
+                <span style={{
+                  background: `${meta.color}22`,
+                  color: meta.color,
+                  border: `1px solid ${meta.color}66`,
+                  borderRadius: 12,
+                  padding: '1px 8px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}>
+                  {count} cards
+                </span>
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {cards.map(c => {
+                  const act = NAV_ACTIONS[c.action];
+                  return (
+                    <div key={c.action} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{act.symbol}</span> {act.title}
+                      </span>
+                      <span style={{ fontWeight: 700, color: 'var(--gold-2)' }}>{c.count}×</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
       <Section title="Navigation card actions">
         {(Object.keys(NAV_ACTIONS) as (keyof typeof NAV_ACTIONS)[]).map(k =>
           <Row key={k} symbol={NAV_ACTIONS[k].symbol} title={NAV_ACTIONS[k].title} text={NAV_ACTIONS[k].text} />)}

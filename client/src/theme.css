@@ -118,11 +118,16 @@ h1,h2,.display{font-family:var(--display);font-weight:400;letter-spacing:.5px}
 @keyframes flip{from{transform:rotateY(90deg);opacity:0}to{transform:rotateY(0);opacity:1}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 @keyframes drop{from{transform:translateY(-18px) rotate(-8deg);opacity:0}to{transform:none;opacity:1}}
+@keyframes ship-bob{
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(1.2deg); }
+}
 .anim-in{animation:fadeUp .32s ease both}
 .anim-pop{animation:pop .3s ease both}
 .anim-flip{animation:flip .45s ease both}
 .anim-drop{animation:drop .35s ease both}
 .pulsing{animation:pulse 1.6s ease-in-out infinite}
+.ship-bob{animation:ship-bob 3.4s ease-in-out infinite}
 .ship-move{transition:transform .85s cubic-bezier(.45,.05,.25,1)}
 
 @media (prefers-reduced-motion: reduce){
