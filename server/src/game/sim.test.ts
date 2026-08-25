@@ -1,21 +1,43 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from './GameState.js';
-import { TOTAL_GUNS } from '@ftk/shared';
+import { TOTAL_GUNS, THE_MAP, DIRECTIONS, move, victoryHexes } from '@ftk/shared';
+import type { Direction } from '@ftk/shared';
 
 // Auto-plays one full game via the public API, responding to whatever each
 // seat's prompt asks. Asserts gun conservation + table redaction every step.
 function rand(a: any[]): any { return a[Math.floor(Math.random() * a.length)]; }
-// Score a card by how far along the ship already is toward that card's corner,
-// so deciders push the leading corner — models a coalition converging on a port.
-function coordOf(ship: string, dir: string): number {
-  // Board coords are "col,level"; push the ship toward whichever corner it leads.
-  if (!ship.includes(',')) return 0;
-  const [col, level] = ship.split(',').map(Number);
-  return dir === 'north' ? level : dir === 'east' ? col : -col;
+
+// Real distances over the real board, walked with the engine's own move()
+// function, so the sim can steer instead of drifting. distanceTo(port) gives the
+// number of navigations from every space to that victory space.
+const DIRS = Object.keys(DIRECTIONS) as Direction[];
+function distanceTo(portId: string): Map<string, number> {
+  const dist = new Map<string, number>([[portId, 0]]);
+  // Walk backwards: repeatedly relax every space until nothing improves.
+  for (let pass = 0; pass < THE_MAP.hexes.length; pass++) {
+    let changed = false;
+    for (const h of THE_MAP.hexes) {
+      for (const d of DIRS) {
+        const to = move(THE_MAP, h.id, d).id;
+        if (to === h.id) continue;
+        const cand = (dist.get(to) ?? Infinity) + 1;
+        if (cand < (dist.get(h.id) ?? Infinity)) { dist.set(h.id, cand); changed = true; }
+      }
+    }
+    if (!changed) break;
+  }
+  return dist;
 }
-function bestCard(cards: any[], ship: string): any {
-  return cards.slice().sort((a, b) => coordOf(ship, b.direction) - coordOf(ship, a.direction))[0];
+const PORTS = victoryHexes(THE_MAP).map(h => h.id);
+const DIST: Record<string, Map<string, number>> = Object.fromEntries(PORTS.map(id => [id, distanceTo(id)]));
+
+// A coalition converging on one port: pick the card whose direction lands the
+// ship closest to it. This is what actually exercises victory, map icons and the
+// supply line — a sim that picks at random rarely reaches a corner at all.
+function bestCard(cards: any[], ship: string, port: string): any {
+  const score = (c: any) => DIST[port].get(move(THE_MAP, ship, c.direction as Direction).id) ?? 99;
+  return cards.slice().sort((a, b) => score(a) - score(b))[0];
 }
 
 function conserved(g: Game) {
@@ -28,7 +50,7 @@ function tableLeaksFaction(g: Game): boolean {
   return JSON.stringify(g.viewForTable().seats).includes('"faction"');
 }
 
-function step(g: Game): boolean {
+function step(g: Game, port: string): boolean {
   // returns true if it acted; deciders push the ship's leading corner
   const tv = g.viewForTable();
   // resolve pending / phase-level table actions first
@@ -39,25 +61,25 @@ function step(g: Game): boolean {
       case 'pirateGathering': g.ackGathering(seat.id); return true;
       case 'appoint': {
         const el = p.data.eligible; if (el.length < 2) return false;
-        g.appointTeam(el[0].seatId, el[1].seatId); return true;
+        g.appointTeam(seat.id, el[0].seatId, el[1].seatId); return true;
       }
       case 'lockGuns':
         if (!p.data.locked) { const g0 = Math.random() < 0.9 ? 0 : Math.floor(Math.random() * (p.data.maxGuns + 1)); g.lockGuns(seat.id, g0); return true; }
         break;
       case 'mutinyResult':
-        if (p.data.canContinue) { g.continueAfterMutiny(); return true; }
+        if (p.data.canContinue) { g.continueAfterMutiny(seat.id); return true; }
         break;
-      case 'tieResolution': g.resolveTiePick(rand(p.data.tied).seatId); return true;
+      case 'tieResolution': g.resolveTiePick(seat.id, rand(p.data.tied).seatId); return true;
       case 'navDiscard': {
         const cards = p.data.cards as any[];
-        const keep = bestCard(cards, g.shipSpace!);
+        const keep = bestCard(cards, g.shipSpace!, port);
         const disc = cards.find(c => c.id !== keep.id) ?? cards[0];
         g.navDiscard(seat.id, disc.id); return true;
       }
       case 'navChoose': {
         const cards = p.data.cards as any[];
         if (Math.random() < 0.02) { g.denialOfCommand(seat.id); return true; }
-        g.navChoose(seat.id, bestCard(cards, g.shipSpace!).id); return true;
+        g.navChoose(seat.id, bestCard(cards, g.shipSpace!, port).id); return true;
       }
       case 'cabinResult': g.ackCabinResult(seat.id); return true;
       case 'mermaidView': g.ackMermaid(seat.id); return true;
@@ -84,7 +106,7 @@ function step(g: Game): boolean {
   return false;
 }
 
-function playGame(nPlayers: number) {
+function playGame(nPlayers: number, port = rand(PORTS)) {
   const g = new Game('SIM');
   for (let i = 0; i < nPlayers; i++) g.addSeat('P' + i);
   g.startGame();
@@ -92,7 +114,7 @@ function playGame(nPlayers: number) {
   while (g.phase !== 'ended' && steps < 12000) {
     assert.ok(conserved(g), `guns not conserved before step ${steps} (phase ${g.phase})`);
     assert.ok(!tableLeaksFaction(g), `table leaked a faction at step ${steps} (phase ${g.phase})`);
-    const acted = step(g);
+    const acted = step(g, port);
     if (!acted) assert.fail(`deadlock at step ${steps}, phase ${g.phase}`);
     steps++;
   }
@@ -101,21 +123,24 @@ function playGame(nPlayers: number) {
 }
 
 test('simulation: 30 games (5-7 players) run to completion without deadlock', () => {
-  let ended = 0;
   for (let i = 0; i < 30; i++) {
     const r = playGame(5 + (i % 3));
-    if (r.ended) ended++;
+    assert.ok(r.ended, `game ${i} never ended (${r.steps} steps)`);
   }
-  assert.ok(ended >= 24, `expected most games to end, got ${ended}/30`);
 });
 
 test('simulation: 20 games (7-11 players) run to completion', () => {
-  let ended = 0;
   for (let i = 0; i < 20; i++) {
     const r = playGame(7 + (i % 5));
-    if (r.ended) ended++;
+    assert.ok(r.ended, `game ${i} never ended (${r.steps} steps)`);
   }
-  assert.ok(ended >= 13, `expected most games to end, got ${ended}/20`);
+});
+
+test('simulation: every port on the board is reachable by steering for it', () => {
+  for (const port of PORTS) {
+    const r = playGame(7, port);
+    assert.ok(r.ended, `steering for ${port} never ended`);
+  }
 });
 
 test('simulation: end reveal names a winning faction and all seat factions', () => {

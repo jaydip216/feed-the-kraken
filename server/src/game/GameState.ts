@@ -45,7 +45,9 @@ interface Snapshot {
   mutinyCommits: [string, number][]; mutinyResult: any; mutinyResolved: boolean;
   nav: NavState | null; resolveQueue: string[]; currentCard: NavCard | null;
   pending: Pending | null; pendingCultRitual: boolean; cultRitualType: CultRitual | null;
-  cultRitualDeck: CultRitual[]; tieCandidates: string[]; revealedCard: NavCard | null;
+  cultRitualDeck: CultRitual[]; tieCandidates: string[]; tiePicker: string | null;
+  revealedCard: NavCard | null;
+  teamCaptainId: string | null; teamLieutenantId: string | null; teamNavigatorId: string | null;
   gate: { step: 'move' | 'mapAction' | 'cardAction' } | null; lastPublic: Spotlight | null;
 }
 
@@ -75,6 +77,15 @@ export class Game {
   private cultRitualType: CultRitual | null = null;
   private cultRitualDeck: CultRitual[] = [];
   private tieCandidates: string[] = [];
+  // Whose turn it is to knock a player out of a mutiny tie (p.9: the captain
+  // picks first, then each selected player picks the next).
+  private tiePicker: string | null = null;
+  // The navigation team as it actually was when the navigation started. Badges
+  // move around mid-round (Drunk, denial of command), so off-duty signs and the
+  // Cult Cabin Search read these instead of the live badges.
+  private teamCaptainId: string | null = null;
+  private teamLieutenantId: string | null = null;
+  private teamNavigatorId: string | null = null;
   // "Movement Steps I / II / III" gate: when set the table waits for a button.
   private gate: { step: 'move' | 'mapAction' | 'cardAction' } | null = null;
   // Last thing the whole table saw happen (public half of a captain action).
@@ -92,6 +103,14 @@ export class Game {
   captain() { return this.seats.find(s => s.isCaptain); }
   private badgeSeat(b: 'lieutenant' | 'navigator') { return this.seats.find(s => s.badge === b); }
   private activePlayers() { return this.seats.filter(s => !s.eliminated); }
+  // Hand the captain's hat to a seat. The captain never also wears a badge —
+  // p.10 forbids the captain appointing himself and forbids one player being
+  // both lieutenant and navigator, so the badge is dropped on promotion.
+  private setCaptain(seat: Seat) {
+    for (const s of this.seats) s.isCaptain = false;
+    seat.isCaptain = true;
+    seat.badge = undefined;
+  }
 
   // ---------------- host undo / rewind ----------------
   pushHistory() {
@@ -109,7 +128,10 @@ export class Game {
       pending: this.pending ? JSON.parse(JSON.stringify(this.pending)) : null,
       pendingCultRitual: this.pendingCultRitual, cultRitualType: this.cultRitualType,
       cultRitualDeck: [...this.cultRitualDeck], tieCandidates: [...this.tieCandidates],
+      tiePicker: this.tiePicker,
       revealedCard: this.revealedCard ? { ...this.revealedCard } : null,
+      teamCaptainId: this.teamCaptainId, teamLieutenantId: this.teamLieutenantId,
+      teamNavigatorId: this.teamNavigatorId,
       gate: this.gate ? { ...this.gate } : null,
       lastPublic: this.lastPublic ? { ...this.lastPublic } : null,
     };
@@ -129,7 +151,10 @@ export class Game {
     this.nav = s.nav; this.resolveQueue = [...s.resolveQueue]; this.currentCard = s.currentCard;
     this.pending = s.pending; this.pendingCultRitual = s.pendingCultRitual; this.cultRitualType = s.cultRitualType;
     this.cultRitualDeck = [...s.cultRitualDeck]; this.tieCandidates = [...s.tieCandidates];
+    this.tiePicker = s.tiePicker;
     this.revealedCard = s.revealedCard;
+    this.teamCaptainId = s.teamCaptainId; this.teamLieutenantId = s.teamLieutenantId;
+    this.teamNavigatorId = s.teamNavigatorId;
     this.gate = s.gate; this.lastPublic = s.lastPublic;
     this.addLog('Host undid the last action.');
     return true;
@@ -191,24 +216,52 @@ export class Game {
   }
 
   // ---------------- appoint ----------------
+  // p.10 restricts the team to: not the captain, not off-duty, not eliminated.
+  // Losing a tongue only bars you from becoming captain (p.13) — a silent player
+  // is still a perfectly legal lieutenant or navigator.
   private eligibleForTeam(): Seat[] {
-    return this.seats.filter(s => !s.isCaptain && !s.offDuty && !s.eliminated && s.hasTongue);
+    const aboard = this.seats.filter(s => !s.isCaptain && !s.eliminated);
+    const onDuty = aboard.filter(s => !s.offDuty);
+    // p.11: "Off-duty signs are ignored if there aren't enough available players
+    // left for the captain to choose their navigation team."
+    return onDuty.length >= 2 ? onDuty : aboard;
   }
-  appointTeam(lieutenantId: string, navigatorId: string) {
+  appointTeam(seatId: string, lieutenantId: string, navigatorId: string) {
     const cap = this.captain();
     if (!cap || this.phase !== 'appoint') return;
+    if (cap.id !== seatId) return;              // only the captain appoints
     if (lieutenantId === navigatorId) return;
+    const eligible = this.eligibleForTeam();
     const lt = this.seat(lieutenantId), nav = this.seat(navigatorId);
-    const ok = (s?: Seat) => !!s && !s.isCaptain && !s.offDuty && !s.eliminated && s.hasTongue;
+    const ok = (s?: Seat) => !!s && eligible.includes(s);
     if (!ok(lt) || !ok(nav)) return;
-    for (const s of this.seats) if (s.badge) s.badge = undefined;
-    lt!.badge = 'lieutenant'; nav!.badge = 'navigator';
+    this.assignTeam(lt!, nav!);
     this.addLog(`${cap.name} appointed ${lt!.name} (Lieutenant) & ${nav!.name} (Navigator).`);
     this.beginMutiny();
+  }
+  private assignTeam(lt?: Seat, nav?: Seat) {
+    for (const s of this.seats) if (s.badge) s.badge = undefined;
+    if (lt) lt.badge = 'lieutenant';
+    if (nav) nav.badge = 'navigator';
+    this.teamLieutenantId = lt?.id ?? null;
+    this.teamNavigatorId = nav?.id ?? null;
   }
 
   // ---------------- mutiny ----------------
   private mutinyEligible(): Seat[] { return this.seats.filter(s => !s.isCaptain && !s.eliminated); }
+  // Whom we are still genuinely waiting on. A player whose phone dropped can't
+  // lock anything, so they'd otherwise freeze the phase forever; they commit 0.
+  private mutinyPending(): Seat[] {
+    return this.mutinyEligible().filter(s => s.connected && !this.mutinyCommits.has(s.id));
+  }
+  // Called when a socket connects/disconnects, so a drop mid-mutiny resolves it.
+  markConnected(seatId: string, connected: boolean) {
+    const s = this.seat(seatId);
+    if (!s || s.connected === connected) return;
+    s.connected = connected;
+    if (!connected && this.phase === 'mutiny' && !this.mutinyResolved && this.mutinyPending().length === 0)
+      this.resolveMutinyReveal();
+  }
   beginMutiny() {
     // No crew left to mutiny — the captain sails straight to navigation.
     if (this.mutinyEligible().length === 0) { this.addLog('No crew to question — on to navigation.'); this.beginNavigation(); return; }
@@ -222,7 +275,7 @@ export class Game {
     if (!s || s.isCaptain || s.eliminated) return;
     const g = Math.max(0, Math.min(Math.floor(guns) || 0, s.guns));
     this.mutinyCommits.set(seatId, g);
-    if (this.mutinyEligible().every(e => this.mutinyCommits.has(e.id))) this.resolveMutinyReveal();
+    if (this.mutinyPending().length === 0) this.resolveMutinyReveal();
   }
   private resolveMutinyReveal() {
     const counts: Record<string, number> = {}; let sum = 0;
@@ -233,8 +286,9 @@ export class Game {
     this.mutinyResolved = true;
     this.addLog(`Loyalty revealed: ${sum} guns vs threshold ${threshold} — ${success ? 'MUTINY!' : 'no mutiny'}.`);
   }
-  continueAfterMutiny() {
+  continueAfterMutiny(seatId?: string) {
     if (this.phase !== 'mutiny' || !this.mutinyResolved || !this.mutinyResult) return;
+    if (seatId && this.captain()?.id !== seatId) return;   // only the captain continues
     const r = this.mutinyResult;
     if (!r.success) { this.addLog('The captain proceeds to navigation.'); this.beginNavigation(); return; }
     // successful mutiny: most revealed guns wins; tongueless count as 0 for this.
@@ -242,7 +296,14 @@ export class Game {
     const max = Math.max(...scored.map(([, g]) => g));
     const tied = scored.filter(([, g]) => g === max && max > 0).map(([id]) => id);
     if (tied.length === 1) this.installNewCaptain(tied[0]);
-    else if (tied.length === 0) { this.addLog('No guns revealed — captaincy unchanged.'); this.beginNavigation(); }
+    else if (tied.length === 0) {
+      // The mutiny carried, but every player who raised guns is tongueless and so
+      // counts as 0 (p.13) — nobody can take the helm. The revealed guns are still
+      // discarded (p.9) and the round ends without a navigation.
+      this.discardRevealedGuns();
+      this.addLog('The mutiny carried, but no eligible player can take the helm — the round ends.');
+      this.beginRound();
+    }
     else this.beginTieResolution(tied);
   }
   private discardRevealedGuns() {
@@ -250,20 +311,30 @@ export class Game {
   }
   private installNewCaptain(seatId: string) {
     this.discardRevealedGuns();
-    for (const s of this.seats) s.isCaptain = false;
-    const nc = this.seat(seatId)!; nc.isCaptain = true;
+    const nc = this.seat(seatId)!;
+    this.setCaptain(nc);
     this.addLog(`${nc.name} wins the mutiny and becomes the new captain.`);
     this.beginRound();
   }
   private beginTieResolution(tied: string[]) {
     this.phase = 'mutinyTieResolution'; this.tieCandidates = tied.slice();
+    this.tiePicker = this.captain()?.id ?? null;
     this.addLog(`Tie for most guns between ${tied.map(id => this.seat(id)?.name).join(', ')} — captain breaks it.`);
   }
-  resolveTiePick(loserId: string) {
-    if (this.phase !== 'mutinyTieResolution' || !this.tieCandidates.includes(loserId)) return;
+  // p.9: the captain in office knocks one tied player out, then THAT player
+  // knocks out the next, and so on until one raised hand is left.
+  resolveTiePick(seatId: string, loserId: string) {
+    if (this.phase !== 'mutinyTieResolution') return;
+    if (this.tiePicker && this.tiePicker !== seatId) return;
+    if (!this.tieCandidates.includes(loserId)) return;
     this.tieCandidates = this.tieCandidates.filter(id => id !== loserId);
     this.addLog(`${this.seat(loserId)?.name} lowers their hand.`);
-    if (this.tieCandidates.length === 1) { this.phase = 'mutiny'; this.installNewCaptain(this.tieCandidates[0]); }
+    if (this.tieCandidates.length === 1) {
+      this.tiePicker = null; this.phase = 'mutiny';
+      this.installNewCaptain(this.tieCandidates[0]);
+    } else {
+      this.tiePicker = loserId;   // the player just selected chooses next
+    }
   }
 
   private beginRound() {
@@ -274,6 +345,8 @@ export class Game {
     this.nav = null; this.currentCard = null; this.revealedCard = null; this.resolveQueue = [];
     this.pending = null; this.pendingCultRitual = false; this.cultRitualType = null;
     this.gate = null; this.lastPublic = null;
+    this.tieCandidates = []; this.tiePicker = null;
+    this.teamCaptainId = null; this.teamLieutenantId = null; this.teamNavigatorId = null;
     this.addLog(`Round ${this.round}: appoint a navigation team.`);
     this.maybeAutoResolveAppoint();
   }
@@ -281,16 +354,15 @@ export class Game {
   // Sub-three-players fallback (rulebook p.12): open positions resolved randomly.
   private maybeAutoResolveAppoint() {
     if (this.phase !== 'appoint') return;
-    const eligible = this.eligibleForTeam();
-    if (this.activePlayers().length >= 3 && eligible.length >= 2) return; // normal path
-    // Too few players: captain fills positions randomly (or leaves empty).
+    // p.12 applies ONLY below three players aboard. With three or more the
+    // captain always chooses — off-duty signs are simply ignored when they would
+    // leave too few candidates (handled in eligibleForTeam).
+    if (this.activePlayers().length >= 3) return; // normal path
     const cap = this.captain();
     if (!cap) return;
-    const pool = shuffle(eligible);
-    for (const s of this.seats) if (s.badge) s.badge = undefined;
-    if (pool[0]) pool[0].badge = 'lieutenant';
-    if (pool[1]) pool[1].badge = 'navigator';
-    this.addLog('Too few sailors — the captain resolves the team randomly.');
+    const pool = shuffle(this.eligibleForTeam());
+    this.assignTeam(pool[0], pool[1]);
+    this.addLog('Fewer than three aboard — open positions are resolved randomly.');
     this.beginMutiny();
   }
 
@@ -315,8 +387,15 @@ export class Game {
   beginNavigation(navigatorId?: string, emergency = false) {
     this.phase = 'navigation';
     this.reshuffleIfNeeded();
-    const lt = this.badgeSeat('lieutenant');
-    const navSeat = navigatorId ? this.seat(navigatorId) : this.badgeSeat('navigator');
+    const lt = (this.teamLieutenantId ? this.seat(this.teamLieutenantId) : undefined) ?? this.badgeSeat('lieutenant');
+    const navSeat = navigatorId
+      ? this.seat(navigatorId)
+      : (this.teamNavigatorId ? this.seat(this.teamNavigatorId) : undefined) ?? this.badgeSeat('navigator');
+    // p.11: off-duty signs go to "the players involved in the current
+    // navigation" — snapshot them now, before Drunk can move the hat.
+    this.teamCaptainId = this.captain()?.id ?? null;
+    this.teamLieutenantId = lt?.id ?? null;
+    this.teamNavigatorId = navSeat?.id ?? null;
     this.nav = {
       step: 'captainDiscard',
       captainCards: this.draw(2),
@@ -406,22 +485,37 @@ export class Game {
     this.addLog(`The captain reveals the navigation card: ${keep.direction.toUpperCase()} (${keep.action}).`);
     this.beginExecute(keep);
   }
+  // p.12: the captain may designate ANY remaining player — even an off-duty one.
+  // The lieutenant keeps their post, so they can't double as the navigator.
+  private emergencyNavCandidates(): Seat[] {
+    return this.seats.filter(s => !s.eliminated && !s.isCaptain && s.id !== this.teamLieutenantId);
+  }
   denialOfCommand(seatId: string) {
     if (this.phase !== 'navigation' || !this.nav || this.nav.step !== 'navigatorChoose') return;
     if (this.nav.navigatorId !== seatId) return;
     const nav = this.seat(seatId)!;
     this.toDeepSea(this.nav.logbook); this.nav.logbook = [];
     nav.eliminated = true; nav.badge = undefined;
+    if (this.teamNavigatorId === nav.id) this.teamNavigatorId = null;
+    this.nav = null;
     this.addLog(`${nav.name} denies command and jumps overboard!`);
-    // emergency navigation: captain designates an emergency navigator.
-    this.pending = { type: 'emergencyNav', seatId: this.captain()!.id };
+    // Emergency navigation: the captain designates an emergency navigator. If
+    // nobody is left to designate, p.12's "open positions are resolved randomly"
+    // rule takes over rather than leaving the table with nothing to press.
+    const cap = this.captain();
+    if (!cap || this.emergencyNavCandidates().length === 0) {
+      this.addLog('Nobody left to take the helm — the emergency navigation resolves itself.');
+      this.beginNavigation(undefined, true);
+      return;
+    }
+    this.pending = { type: 'emergencyNav', seatId: cap.id };
     this.phase = 'emergencyNavigation';
   }
   designateEmergencyNavigator(seatId: string, navId: string) {
     if (this.phase !== 'emergencyNavigation' || this.pending?.type !== 'emergencyNav') return;
     if (this.captain()?.id !== seatId) return;
     const nav = this.seat(navId);
-    if (!nav || nav.eliminated || nav.isCaptain) return;
+    if (!nav || !this.emergencyNavCandidates().includes(nav)) return;
     this.pending = null;
     this.addLog(`${this.captain()!.name} designates ${nav.name} as emergency navigator.`);
     this.beginNavigation(navId, true);
@@ -568,8 +662,7 @@ export class Game {
     }
     if (!chosen) return;
     const before = this.captain();
-    for (const s of this.seats) s.isCaptain = false;
-    chosen.isCaptain = true;
+    this.setCaptain(chosen);
     const da = NAV_ACTIONS.drunk;
     this.publish('drunk', da.symbol, da.title,
       `${before?.name ?? 'The captain'} is drunk and loses the helm.`,
@@ -582,12 +675,23 @@ export class Game {
     if (v) this.endGame(victoryFaction(v), `The ship reached ${VICTORY_LABEL[v]}.`);
   }
 
+  // The five ritual cards are revealed one at a time; there are six Cult Uprising
+  // navigation cards, so the stack is reshuffled once it is exhausted rather than
+  // silently defaulting to Conversion forever.
+  private drawCultRitual(): CultRitual {
+    if (this.cultRitualDeck.length === 0) {
+      this.cultRitualDeck = shuffle<CultRitual>(['conversion', 'conversion', 'conversion', 'gunsStash', 'cultCabinSearch']);
+      this.addLog('The cult ritual cards are shuffled anew.');
+    }
+    return this.cultRitualDeck.shift()!;
+  }
+
   private stepCultRitual(): boolean {
     if (!this.pendingCultRitual) return false;
     this.pendingCultRitual = false;
     const leader = this.seats.find(s => s.faction === 'cultLeader' && !s.eliminated);
     if (!leader) { this.addLog('The cult uprising fizzles — no cult leader aboard.'); return false; }
-    const ritual = this.cultRitualDeck.shift() ?? 'conversion';
+    const ritual = this.drawCultRitual();
     this.cultRitualType = ritual;
     this.phase = 'cultRitual';
     const ra = CULT_RITUALS[ritual];
@@ -671,7 +775,7 @@ export class Game {
   mermaidPick(seatId: string, targetId: string) {
     if (this.pending?.type !== 'mermaidPick' || this.pending.seatId !== seatId) return;
     const t = this.seat(targetId);
-    if (!t || t.eliminated) return;
+    if (!t || t.eliminated || t.id === seatId) return;
     const last3 = this.discardPile.slice(-3).map(c => ({ direction: c.direction, action: c.action }));
     this.pending = { type: 'mermaidView', seatId: t.id, data: { cards: last3 } };
     const ma = NAV_ACTIONS.mermaid;
@@ -686,7 +790,7 @@ export class Game {
   telescopePick(seatId: string, targetId: string) {
     if (this.pending?.type !== 'telescopePick' || this.pending.seatId !== seatId) return;
     const t = this.seat(targetId);
-    if (!t || t.eliminated) return;
+    if (!t || t.eliminated || t.id === seatId) return;
     const top = this.drawPile[0];
     this.pending = { type: 'telescopeView', seatId: t.id, data: { card: top ? { direction: top.direction, action: top.action } : null } };
     const te = NAV_ACTIONS.telescope;
@@ -755,16 +859,134 @@ export class Game {
     const recipients = offDutyRecipients(this.players);
     // previous off-duty players become available again
     for (const s of this.seats) s.offDuty = false;
-    const lt = this.badgeSeat('lieutenant'), nav = this.badgeSeat('navigator'), cap = this.captain();
-    if (recipients.includes('navigator') && nav) nav.offDuty = true;
-    if (recipients.includes('lieutenant') && lt) lt.offDuty = true;
-    if (recipients.includes('captain') && cap) cap.offDuty = true;
+    // p.11: "the corresponding players who were involved in the current
+    // navigation" — the snapshot taken at beginNavigation, not the live badges,
+    // because Drunk (step III) and emergency navigation both move them.
+    const nav = (this.teamNavigatorId ? this.seat(this.teamNavigatorId) : undefined) ?? this.badgeSeat('navigator');
+    const lt = (this.teamLieutenantId ? this.seat(this.teamLieutenantId) : undefined) ?? this.badgeSeat('lieutenant');
+    const cap = (this.teamCaptainId ? this.seat(this.teamCaptainId) : undefined) ?? this.captain();
+    // A player can hold only one sign; skip a slot whose player already has one.
+    if (recipients.includes('navigator') && nav && !nav.eliminated) nav.offDuty = true;
+    if (recipients.includes('lieutenant') && lt && !lt.eliminated) lt.offDuty = true;
+    if (recipients.includes('captain') && cap && !cap.eliminated) cap.offDuty = true;
     this.addLog('Off-duty signs handed out; the navigation team stands down.');
   }
   // Table/host taps "next round" after off-duty (or auto could advance).
   nextRound() {
     if (this.phase !== 'offDuty') return;
     this.beginRound();
+  }
+
+  // ---------------- host escape hatch ----------------
+  // Unsticks whatever the table is waiting on. A phone dies, a player walks off,
+  // a browser is closed mid-prompt — without this the round has no legal move for
+  // anybody. It follows the rulebook's own fallback (p.12: "any open position is
+  // resolved randomly by the captain") rather than inventing new outcomes.
+  forceAdvance(): boolean {
+    if (this.phase === 'lobby' || this.phase === 'ended') return false;
+    if (this.gate) { this.addLog('Host advanced the movement step.'); this.playStep(); return true; }
+    if (this.pending) return this.forcePending();
+    switch (this.phase) {
+      case 'pirateGathering': {
+        for (const pir of this.seats.filter(x => x.faction === 'pirate')) this.gatheringAcks.add(pir.id);
+        this.addLog('Host closed the pirate gathering.');
+        this.phase = 'appoint';
+        this.addLog(`Round ${this.round}: appoint a navigation team.`);
+        return true;
+      }
+      case 'appoint': {
+        const pool = shuffle(this.eligibleForTeam());
+        this.assignTeam(pool[0], pool[1]);
+        this.addLog('Host resolved the navigation team randomly.');
+        this.beginMutiny();
+        return true;
+      }
+      case 'mutiny':
+        if (!this.mutinyResolved) { this.addLog('Host called the loyalty check early.'); this.resolveMutinyReveal(); }
+        else { this.addLog('Host continued past the mutiny.'); this.continueAfterMutiny(); }
+        return true;
+      case 'mutinyTieResolution': {
+        const loser = this.pickOne(this.tieCandidates.map(id => this.seat(id)!).filter(Boolean));
+        if (!loser) return false;
+        this.addLog('Host broke the tie randomly.');
+        this.resolveTiePick(this.tiePicker ?? '', loser.id);
+        return true;
+      }
+      case 'navigation': return this.forceNavigation();
+      case 'emergencyNavigation': {
+        this.pending = null;
+        const nav = this.pickOne(this.emergencyNavCandidates());
+        this.addLog('Host designated the emergency navigator randomly.');
+        this.beginNavigation(nav?.id, true);
+        return true;
+      }
+      case 'execute':
+      case 'cultRitual':
+        this.addLog('Host resumed the navigation.');
+        this.continueExecute();
+        return true;
+      case 'offDuty':
+        this.addLog('Host started the next round.');
+        this.nextRound();
+        return true;
+    }
+    return false;
+  }
+  private pickOne<T>(xs: T[]): T | undefined { return xs.length ? xs[Math.floor(Math.random() * xs.length)] : undefined; }
+
+  // Resolve whichever navigation sub-step is stalled, exactly as the engine
+  // already does when the seat holding it is absent.
+  private forceNavigation(): boolean {
+    const n = this.nav;
+    if (!n) return false;
+    if (n.step === 'captainDiscard') {
+      this.addLog("Host resolved the captain's draw randomly.");
+      this.navDiscard(this.captain()?.id ?? '', this.pickOne(n.captainCards)?.id ?? '');
+      return true;
+    }
+    if (n.step === 'lieutenantDiscard') {
+      this.addLog("Host resolved the lieutenant's draw randomly.");
+      this.doLieutenantDiscard(this.pickOne(n.lieutenantCards)?.id ?? '', true);
+      return true;
+    }
+    this.addLog("Host resolved the navigator's choice randomly.");
+    this.navChoose(n.navigatorId ?? '', this.pickOne(n.logbook)?.id ?? '', true);
+    return true;
+  }
+
+  // Resolve a targeted prompt on the absent player's behalf. Mandatory actions
+  // (the map icons) get a random legal target; "look at this" prompts are simply
+  // acknowledged; anything optional is dropped.
+  private forcePending(): boolean {
+    const p = this.pending!;
+    const who = p.seatId;
+    const others = this.seats.filter(x => x.id !== who && !x.eliminated);
+    const t = this.pickOne(others);
+    this.addLog(`Host resolved a stalled prompt (${p.type}).`);
+    switch (p.type) {
+      case 'emergencyNav': {
+        this.pending = null;
+        this.beginNavigation(this.pickOne(this.emergencyNavCandidates())?.id, true);
+        return true;
+      }
+      case 'mapCabinPick':   if (t) { this.mapCabinPick(who, t.id); return true; } break;
+      case 'mapFlogPick':    if (t) { this.mapFlogPick(who, t.id); return true; } break;
+      case 'mapTonguePick':  if (t) { this.mapTonguePick(who, t.id); return true; } break;
+      case 'mapFeedPick':    if (t) { this.mapFeedPick(who, t.id); return true; } break;
+      case 'mermaidPick':    if (t) { this.mermaidPick(who, t.id); return true; } break;
+      case 'telescopePick':  if (t) { this.telescopePick(who, t.id); return true; } break;
+      case 'cabinResult':    this.ackCabinResult(who); return true;
+      case 'mermaidView':    this.ackMermaid(who); return true;
+      case 'telescopeView':  this.telescopeDecide(who, false); return true;
+      case 'cultCabin':      this.ackCultCabin(who); return true;
+      case 'cultGuns':       this.cultGunsDone(who); return true;
+      case 'cultConvert':    break;   // conversion is the leader's choice — skip it
+      case 'tie':            break;
+    }
+    // Nothing legal to pick: drop the prompt and carry on with the queue.
+    this.pending = null;
+    if (this.phase === 'cultRitual') this.finishCultRitual(); else this.continueExecute();
+    return true;
   }
 
   // ---------------- end game ----------------
@@ -842,7 +1064,11 @@ export class Game {
       seats: this.seats.map(s => this.publicSeat(s, secret)),
       supplyPool: this.supplyPool, drawPileCount: this.drawPile.length, shipSpace: this.shipSpace,
       mutinyProgress: this.phase === 'mutiny' && !this.mutinyResolved
-        ? { locked: this.mutinyCommits.size, total: this.mutinyEligible().length } : undefined,
+        ? {
+            locked: this.mutinyEligible().filter(s => this.mutinyCommits.has(s.id)).length,
+            total: this.mutinyEligible().filter(s => s.connected || this.mutinyCommits.has(s.id)).length,
+          }
+        : undefined,
       mutinyResult: this.mutinyResolved ? this.mutinyResult : undefined,
       navigationSilent: this.phase === 'navigation',
       navStep: this.nav?.step,
@@ -877,6 +1103,23 @@ export class Game {
     };
   }
 
+  // The three players who carried out the current navigation, de-duplicated —
+  // p.14's Cult Cabin Search shows the captain, lieutenant and navigator.
+  private navigationTeam(): Seat[] {
+    const ids = [
+      this.teamCaptainId ?? this.captain()?.id,
+      this.teamLieutenantId,
+      this.teamNavigatorId,
+    ];
+    const out: Seat[] = [];
+    for (const id of ids) {
+      if (!id) continue;
+      const st = this.seat(id);
+      if (st && !out.includes(st)) out.push(st);
+    }
+    return out;
+  }
+
   private otherSeats(excludeSelf: Seat, opts?: { noEliminated?: boolean }) {
     return this.seats
       .filter(x => x.id !== excludeSelf.id && (!opts?.noEliminated || !x.eliminated))
@@ -904,10 +1147,10 @@ export class Game {
         }
         case 'cultGuns': return { kind: 'cultGuns', title: 'Distribute guns from the stash', data: { remaining: (p.data?.remaining ?? 0), targets: this.activePlayers().map(x => ({ seatId: x.id, name: x.name })) } };
         case 'cultCabin': {
-          const team = [this.captain(), this.badgeSeat('lieutenant'), this.badgeSeat('navigator')].filter(Boolean).map(x => ({ name: x!.name, faction: x!.faction }));
+          const team = this.navigationTeam().map(x => ({ name: x.name, faction: x.faction }));
           return { kind: 'cultCabin', title: 'The navigation team\'s factions', data: { team } };
         }
-        case 'emergencyNav': return { kind: 'chooseTarget', title: 'Designate an emergency navigator', data: { action: 'emergencyNav', targets: this.seats.filter(x => !x.eliminated && !x.isCaptain).map(x => ({ seatId: x.id, name: x.name })) } };
+        case 'emergencyNav': return { kind: 'chooseTarget', title: 'Designate an emergency navigator', data: { action: 'emergencyNav', targets: this.emergencyNavCandidates().map(x => ({ seatId: x.id, name: x.name })) } };
       }
     }
     switch (this.phase) {
@@ -929,8 +1172,8 @@ export class Game {
         if (s.isCaptain) return { kind: 'idle', title: '"Show me your loyalty!" — waiting for the crew.' };
         return { kind: 'lockGuns', title: 'Commit your guns', data: { maxGuns: s.guns, threshold: mutinyThreshold(this.players), locked: this.mutinyCommits.has(s.id), committed: this.mutinyCommits.get(s.id) ?? 0 } };
       case 'mutinyTieResolution':
-        if (s.isCaptain) return { kind: 'tieResolution', title: 'Break the tie', data: { tied: this.tieCandidates.map(id => ({ seatId: id, name: this.seat(id)?.name })) } };
-        return { kind: 'idle', title: 'The captain is breaking a tie.' };
+        if (this.tiePicker === s.id) return { kind: 'tieResolution', title: 'Break the tie — choose who lowers their hand', data: { tied: this.tieCandidates.map(id => ({ seatId: id, name: this.seat(id)?.name })) } };
+        return { kind: 'idle', title: `${this.seat(this.tiePicker ?? '')?.name ?? 'The captain'} is breaking the tie.` };
       case 'navigation': {
         const n = this.nav;
         if (n) {

@@ -66,11 +66,16 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', (p, cb) => {
     const g = rooms.get(p.roomCode);
     if (!g) return cb?.({ ok: false, error: 'Room not found' });
+    // A double-tapped Join must not deal a second hand: prefer the reconnect
+    // token, then the seat this socket already holds, and only then create one.
     let seat = p.reconnectToken ? g.reattach(p.reconnectToken) : undefined;
+    if (!seat && socket.data.roomCode === g.roomCode && socket.data.seatId)
+      seat = g.seat(socket.data.seatId);
     if (!seat) {
       if (g.phase !== 'lobby') return cb?.({ ok: false, error: 'Game already started' });
       seat = g.addSeat((p.name || 'Sailor').slice(0, 16));
     }
+    g.markConnected(seat.id, true);
     socket.join(seatRoom(g.roomCode, seat.id));
     socket.data.roomCode = g.roomCode;
     socket.data.seatId = seat.id;
@@ -99,10 +104,10 @@ io.on('connection', (socket) => {
     // everything else is, so host undo rewinds to a clean prior step.
     const snap = () => g.pushHistory();
     switch (p.type) {
-      case 'appoint': snap(); g.appointTeam(P.lieutenant, P.navigator); break;
+      case 'appoint': snap(); if (seat) g.appointTeam(seat, P.lieutenant, P.navigator); break;
       case 'lockGuns': if (seat) g.lockGuns(seat, P.guns ?? 0); break;
-      case 'mutinyContinue': snap(); g.continueAfterMutiny(); break;
-      case 'tieResolution': snap(); if (seat) g.resolveTiePick(P.loser); break;
+      case 'mutinyContinue': snap(); if (seat) g.continueAfterMutiny(seat); break;
+      case 'tieResolution': snap(); if (seat) g.resolveTiePick(seat, P.loser); break;
       // navigation
       case 'navDiscard': snap(); if (seat) g.navDiscard(seat, P.cardId); break;
       case 'navChoose': snap(); if (seat) g.navChoose(seat, P.cardId); break;
@@ -135,7 +140,8 @@ io.on('connection', (socket) => {
 
   // Host escape hatches (M0: undo + a demoable end-game reveal).
   socket.on('hostForceAdvance', () => withGame(g => {
-    g.addLog('Host force-advanced the phase.');
+    g.pushHistory();
+    if (!g.forceAdvance()) socket.emit('toast', { kind: 'warn', text: 'Nothing to force-advance right now.' });
   }));
   socket.on('hostEndGame', (p: any) => withGame(g => {
     g.pushHistory();
@@ -163,8 +169,7 @@ io.on('connection', (socket) => {
     const g = rooms.get(socket.data.roomCode);
     const seatId = socket.data.seatId;
     if (g && seatId) {
-      const s = g.seat(seatId);
-      if (s) { s.connected = false; broadcast(g); }
+      if (g.seat(seatId)) { g.markConnected(seatId, false); broadcast(g); }
     }
   });
 });

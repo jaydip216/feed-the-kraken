@@ -81,7 +81,7 @@ test('mutiny: appoint transitions to mutiny, non-captains prompted to lock guns'
   (g as any).phase = 'appoint';
   const cap = g.captain()!;
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   assert.equal(g.phase, 'mutiny');
   // every non-captain gets a lockGuns prompt; captain waits
   for (const s of g.seats) {
@@ -98,7 +98,7 @@ test('mutiny: successful mutiny installs new captain and discards revealed guns'
   (g as any).phase = 'appoint';
   const cap = g.captain()!;
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   // clear winner: one commits 3, another 1, rest 0 (sum 4 >= threshold 3)
   const before = g.supplyPool;
   g.lockGuns(others[0].id, 3);
@@ -107,7 +107,7 @@ test('mutiny: successful mutiny installs new captain and discards revealed guns'
   const tv = g.viewForTable();
   assert.ok(tv.mutinyResult, 'result should be revealed after all lock in');
   assert.equal(tv.mutinyResult!.success, true);
-  g.continueAfterMutiny();
+  g.continueAfterMutiny(g.captain()!.id);
   // a new captain emerges (most guns), guns discarded to supply
   assert.notEqual(g.captain()!.id, cap.id);
   assert.equal(g.captain()!.id, others[0].id, 'most guns wins');
@@ -123,11 +123,11 @@ test('mutiny: below threshold means no mutiny and proceeds to navigation', () =>
   (g as any).phase = 'appoint';
   const cap = g.captain()!;
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   for (const s of others) g.lockGuns(s.id, 0);
   const tv = g.viewForTable();
   assert.equal(tv.mutinyResult!.success, false);
-  g.continueAfterMutiny();
+  g.continueAfterMutiny(g.captain()!.id);
   assert.equal(g.captain()!.id, cap.id, 'captain unchanged when no mutiny');
   assert.equal(g.phase, 'navigation');
 });
@@ -138,7 +138,7 @@ test('mutiny: gun counts stay secret in the table view until everyone locks in',
   g.startGame();
   (g as any).phase = 'appoint';
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   g.lockGuns(others[0].id, 2); // only one locked
   const tv = g.viewForTable();
   assert.equal(tv.mutinyResult, undefined, 'no reveal before all lock in');
@@ -196,9 +196,9 @@ test('movement steps I/II/III gate resolution behind a button', () => {
   // walk to a navigation and pick a card
   (g as any).phase = 'appoint';
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   for (const s of others) g.lockGuns(s.id, 0);
-  g.continueAfterMutiny();
+  g.continueAfterMutiny(g.captain()!.id);
   assert.equal(g.phase, 'navigation');
   const cap = g.captain()!;
   const capCards = g.viewForPlayer(cap.id)!.prompt.data.cards;
@@ -308,9 +308,9 @@ function playCard(action: 'disarmed' | 'armed' | 'drunk', direction: 'north' | '
   if (g.phase === 'pirateGathering') for (const s of g.seats) g.ackGathering(s.id);
   const cap = g.captain()!;
   const others = g.seats.filter(s => !s.isCaptain);
-  g.appointTeam(others[0].id, others[1].id);
+  g.appointTeam(g.captain()!.id, others[0].id, others[1].id);
   for (const s of others) g.lockGuns(s.id, 0);
-  g.continueAfterMutiny();
+  g.continueAfterMutiny(g.captain()!.id);
   const nav = g.seats.find(s => s.badge === 'navigator')!;
   const card = () => ({ id: Math.random().toString(36).slice(2), direction, action });
   (g as any).nav.captainCards = [card(), card()];
