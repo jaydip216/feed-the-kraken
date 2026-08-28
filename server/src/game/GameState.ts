@@ -164,7 +164,7 @@ export class Game {
   addSeat(name: string): Seat {
     const seat: Seat = {
       id: nanoid(8), reconnectToken: nanoid(24), name, order: this.seats.length,
-      connected: true, faction: 'sailor', guns: 0, isCaptain: false,
+      connected: true, faction: 'sailor', originalFaction: 'sailor', guns: 0, isCaptain: false,
       offDuty: false, eliminated: false, hasTongue: true, examined: false, resume: [],
     };
     this.seats.push(seat);
@@ -187,7 +187,11 @@ export class Game {
       throw new Error(`need ${MIN_PLAYERS}-${MAX_PLAYERS} players`);
     this.seats.sort((a, b) => a.order - b.order);
     const factions = dealFactions(this.players);
-    this.seats.forEach((s, i) => { s.faction = factions[i]; s.guns = STARTING_GUNS_PER_PLAYER; });
+    this.seats.forEach((s, i) => {
+      s.faction = factions[i];
+      s.originalFaction = factions[i];   // the chip in the seabag; never changes
+      s.guns = STARTING_GUNS_PER_PLAYER;
+    });
     this.supplyPool = TOTAL_GUNS - STARTING_GUNS_PER_PLAYER * this.players;
     this.shipSpace = THE_MAP.startId;
     this.drawPile = buildDrawPile(this.mapId);
@@ -718,7 +722,15 @@ export class Game {
     const t = this.seat(targetId);
     if (!t || t.id === seatId || t.eliminated) return;
     t.examined = true;
-    this.pending = { type: 'cabinResult', seatId, data: { targetId, faction: t.faction, name: t.name } };
+    // p.13: the captain inspects the SEABAG, which still holds the chip dealt at
+    // setup — converting to the Cult never swaps it. A player converted during the
+    // game additionally "signals this to the captain with a tentacle gesture", so
+    // the captain learns both halves: the original chip and the conversion.
+    const converted = t.faction === 'cultist' && t.originalFaction !== 'cultist';
+    this.pending = {
+      type: 'cabinResult', seatId,
+      data: { targetId, faction: t.originalFaction, name: t.name, tentacleSignal: converted },
+    };
     const a = MAP_ACTIONS.cabinSearch;
     this.publish('cabinSearch', a.symbol, a.title,
       `${this.captain()!.name} searches ${t.name}'s seabag. Only the captain sees the result.`);
@@ -776,7 +788,12 @@ export class Game {
     if (this.pending?.type !== 'mermaidPick' || this.pending.seatId !== seatId) return;
     const t = this.seat(targetId);
     if (!t || t.eliminated || t.id === seatId) return;
-    const last3 = this.discardPile.slice(-3).map(c => ({ direction: c.direction, action: c.action }));
+    // p.13: the chosen player "shuffles the last three discarded navigation cards
+    // and secretly looks at them". The shuffle matters — at this point in the round
+    // the last three discards are exactly the captain's, the lieutenant's and the
+    // navigator's, in that order, so handing them over in pile order would tell the
+    // viewer who threw away what. Shuffle before it ever leaves the server.
+    const last3 = shuffle(this.discardPile.slice(-3)).map(c => ({ direction: c.direction, action: c.action }));
     this.pending = { type: 'mermaidView', seatId: t.id, data: { cards: last3 } };
     const ma = NAV_ACTIONS.mermaid;
     this.publish('mermaid', ma.symbol, ma.title,

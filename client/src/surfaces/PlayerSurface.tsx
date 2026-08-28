@@ -359,8 +359,15 @@ function CabinResult({ v }: { v: PlayerView }) {
   const d = v.prompt.data ?? {};
   return (
     <div className="card center">
-      <b>{d.name}'s true faction</b>
+      <b>{d.name}'s seabag</b>
       <div style={{ margin: '12px 0' }}><FactionChip f={d.faction} /></div>
+      {/* p.13: a player converted since the deal signals it with a tentacle gesture. */}
+      {d.tentacleSignal &&
+        <div style={{ margin: '0 0 12px', padding: '10px 12px', borderRadius: 10,
+          background: '#20280f', color: '#e6c65a', fontSize: 13, textAlign: 'left' }}>
+          🐙 {d.name} makes the <b>tentacle gesture</b> — the chip is what they were
+          dealt, but they have since been <b>converted to the Cult</b>.
+        </div>}
       <p className="sub">Only you saw this. What you tell the crew is up to you.</p>
       <button className="btn block" onClick={() => emit('action', { roomCode: v.roomCode, type: 'ackCabinResult' })}>Done</button>
     </div>

@@ -58,6 +58,9 @@ export interface Seat {
   order: number;           // physical seating order, 0-based, clockwise
   connected: boolean;
   faction: Faction;
+  // The chip actually sitting in this player's seabag. Conversion to Cult never
+  // swaps the physical chip (p.15), so a Cabin Search reads THIS, not `faction`.
+  originalFaction: Faction;
   guns: number;            // personal gun supply (public outside mutinies)
   isCaptain: boolean;
   badge?: Badge;

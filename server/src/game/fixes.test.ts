@@ -257,3 +257,47 @@ test('host undo still rewinds cleanly after a force-advance', () => {
   assert.ok(g.undo());
   assert.equal(JSON.stringify(g.viewForTable().seats), before);
 });
+
+test('p.13: a cabin search reads the seabag chip, not the current faction', () => {
+  const g = setup(SIX);
+  const cap = g.captain()!;
+  const target = g.seats.find(s => !s.isCaptain && s.faction === 'sailor')!;
+  // The cult converts them mid-game; the chip in the bag never changes.
+  target.faction = 'cultist';
+  (g as any).pending = { type: 'mapCabinPick', seatId: cap.id };
+  g.mapCabinPick(cap.id, target.id);
+  const d = (g.viewForPlayer(cap.id)!.prompt as any).data;
+  assert.equal(d.faction, 'sailor', 'the captain must see the dealt chip');
+  assert.equal(d.tentacleSignal, true, 'the convert signals the conversion');
+});
+
+test('p.13: a seabag that was dealt a cult chip needs no tentacle gesture', () => {
+  const g = setup(SIX);
+  const cap = g.captain()!;
+  const leader = g.seats.find(s => !s.isCaptain && s.faction === 'cultLeader')!;
+  (g as any).pending = { type: 'mapCabinPick', seatId: cap.id };
+  g.mapCabinPick(cap.id, leader.id);
+  const d = (g.viewForPlayer(cap.id)!.prompt as any).data;
+  assert.equal(d.faction, 'cultLeader');
+  assert.equal(d.tentacleSignal, false, 'the chip already says it — no gesture');
+});
+
+test('p.13: the mermaid sees the last three discards shuffled, not in role order', () => {
+  // The three discards of a round are the captain's, the lieutenant's and the
+  // navigator's, in that order. Handing them over unshuffled attributes each one.
+  const roleOrder = ['c0', 'l1', 'n2'];
+  let sawADifferentOrder = false;
+  for (let i = 0; i < 60 && !sawADifferentOrder; i++) {
+    const g = setup(SIX);
+    const cap = g.captain()!;
+    const target = g.seats.find(s => !s.isCaptain)!;
+    (g as any).discardPile = roleOrder.map((id, n) =>
+      ({ id, direction: (['north', 'east', 'west'] as const)[n], action: 'drunk' }));
+    (g as any).pending = { type: 'mermaidPick', seatId: cap.id };
+    g.mermaidPick(cap.id, target.id);
+    const cards = (g.viewForPlayer(target.id)!.prompt as any).data.cards;
+    assert.equal(cards.length, 3, 'all three discards are still shown');
+    if (cards.map((c: any) => c.direction).join() !== 'north,east,west') sawADifferentOrder = true;
+  }
+  assert.ok(sawADifferentOrder, 'the mermaid must not always return discard-pile order');
+});
