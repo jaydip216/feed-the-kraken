@@ -294,10 +294,54 @@ test('supply line refills the crew to three guns when crossed', () => {
   const poolBefore = g.supplyPool;
   (g as any).stepMove();
 
-  assert.ok(getHex(map, g.shipSpace!)!.level >= map.supplyLineLevel, 'expected to cross the line');
+  assert.ok(getHex(map, g.shipSpace!)!.beyondSupplyLine, 'expected to cross the line');
   assert.ok(g.seats.every(s => s.guns === 3), 'every crew should refill to 3');
   assert.equal(g.supplyPool, poolBefore - (3 - drained) * g.seats.length);
   assert.equal(g.seats.reduce((n, s) => n + s.guns, 0) + g.supplyPool, TOTAL_GUNS);
+});
+
+test('supply line follows every crossing of the drawn zigzag and only refills once', () => {
+  const crossings = [
+    ['8', 'west', '13'], ['8', 'north', '13'],
+    ['9', 'west', '13'], ['9', 'north', '14'],
+    ['10', 'west', '14'], ['10', 'north', '15'], ['10', 'east', '16'],
+    ['11', 'north', '16'], ['11', 'east', '17'],
+    ['12', 'north', '17'], ['12', 'east', '17'],
+  ] as const;
+  for (const [from, direction, to] of crossings) {
+    const g = new Game('TEST');
+    for (const n of ['A', 'B', 'C', 'D', 'E', 'F']) g.addSeat(n);
+    g.startGame();
+    for (const s of g.seats) s.guns = 1;
+    g.supplyPool = TOTAL_GUNS - g.seats.length;
+    g.shipSpace = from;
+    (g as any).currentCard = { id: 'x', direction, action: 'drunk' };
+    (g as any).stepMove();
+    assert.equal(g.shipSpace, to);
+    assert.ok(g.seats.every(s => s.guns === 3), `${from} → ${to} must refill immediately`);
+    assert.equal(g.supplyPool, TOTAL_GUNS - 3 * g.seats.length);
+
+    // Spending a gun after crossing must not cause another refill on the next move.
+    g.seats[0].guns--;
+    g.supplyPool++;
+    (g as any).stepMove();
+    assert.equal(g.seats[0].guns, 2, `${from} → ${to} must not refill twice`);
+  }
+});
+
+test('movement along the near side of the supply line does not refill guns', () => {
+  for (const [from, direction] of [['8', 'east'], ['9', 'east'], ['11', 'west'], ['12', 'west']] as const) {
+    const g = new Game('TEST');
+    for (const n of ['A', 'B', 'C', 'D', 'E', 'F']) g.addSeat(n);
+    g.startGame();
+    for (const s of g.seats) s.guns = 1;
+    g.supplyPool = TOTAL_GUNS - g.seats.length;
+    g.shipSpace = from;
+    (g as any).currentCard = { id: 'x', direction, action: 'drunk' };
+    (g as any).stepMove();
+    assert.ok(g.seats.every(s => s.guns === 1));
+    assert.equal(g.supplyPool, TOTAL_GUNS - g.seats.length);
+  }
 });
 
 // Drive a game to the point where one specific navigation card is revealed.

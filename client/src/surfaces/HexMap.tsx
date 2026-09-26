@@ -202,6 +202,15 @@ export function HexMap({ shipSpace, size = 30, showNumbers = false }:
 
   const shipHex = getHex(map, shipSpace ?? map.startId) ?? getHex(map, map.startId)!;
   const shipPos = hexPixel(shipHex.col, shipHex.level, s);
+  const destinationDirections = new Map<string, Direction[]>();
+  if (!shipHex.victory) {
+    for (const dir of ['west', 'north', 'east'] as const) {
+      const target = move(map, shipHex.id, dir).id;
+      const dirs = destinationDirections.get(target) ?? [];
+      dirs.push(dir);
+      destinationDirections.set(target, dirs);
+    }
+  }
 
   // Sea depth gradient color
   const shade = (level: number) => {
@@ -468,6 +477,32 @@ export function HexMap({ shipSpace, size = 30, showNumbers = false }:
         pointerEvents="none"
         rx={s * 0.6}
       />
+
+      {/* Inset borders keep adjacent destinations distinct. Shared targets show every color. */}
+      <g fill="none" pointerEvents="none" strokeLinejoin="round">
+        {[...destinationDirections].map(([id, dirs]) => {
+          const hex = getHex(map, id)!;
+          const p = hexPixel(hex.col, hex.level, s);
+          const path = hexPath(p.x, p.y, s * 0.9);
+          return (
+            <g key={id}>
+              <title>{dirs.map(dir => DIRECTIONS[dir].label).join(' / ')} destination: hex {id}</title>
+              <path d={path} stroke="#052433" strokeWidth={s * 0.13} />
+              {dirs.map((dir, i) => (
+                <path
+                  key={dir}
+                  d={path}
+                  pathLength={6}
+                  stroke={DIRECTIONS[dir].color}
+                  strokeWidth={s * 0.075}
+                  strokeDasharray={dirs.length > 1 ? `${6 / dirs.length} ${6 - 6 / dirs.length}` : undefined}
+                  strokeDashoffset={-i * 6 / dirs.length}
+                />
+              ))}
+            </g>
+          );
+        })}
+      </g>
 
       {/* 3D Sailing Ship Token */}
       <g className="ship-move" style={{ transform: `translate(${shipPos.x}px, ${shipPos.y}px)` }}>
