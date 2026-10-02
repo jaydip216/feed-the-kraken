@@ -30,7 +30,7 @@ export function PlayerSurface() {
   if (ended) return <SessionOver onAgain={() => setEnded(false)} />;
   if (!joined && !view) return <Join onJoined={() => setJoined(true)} />;
   if (!view) return <div className="wrap center" style={{ paddingTop: 80 }}>Connecting…</div>;
-  return <PlayerBody v={view} />;
+  return <PlayerBody key={`${view.roomCode}:${view.seatId}`} v={view} />;
 }
 
 function Join({ onJoined }: { onJoined: () => void }) {
@@ -64,6 +64,9 @@ function Join({ onJoined }: { onJoined: () => void }) {
 }
 
 function PlayerBody({ v }: { v: PlayerView }) {
+  const [roleVisible, setRoleVisible] = useState(true);
+  const privatePrompt = v.phase === 'pirateGathering' ||
+    ['cultConvert', 'cultGuns', 'cultCabin', 'cabinResult'].includes(v.prompt.kind);
   return (
     <div className="wrap phone">
       <div className="topbar">
@@ -72,9 +75,15 @@ function PlayerBody({ v }: { v: PlayerView }) {
       </div>
       {v.faction &&
         <div className="secret anim-in" style={{ marginBottom: 12 }}>
-          <div className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>{SYMBOLS.seabag} YOUR SEABAG · ONLY YOU SEE THIS</div>
+          <div className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>{SYMBOLS.seabag} YOUR SEABAG · {roleVisible ? 'OPEN' : 'CLOSED'}</div>
+          <button className="btn ghost block" style={{ marginTop: 10 }}
+            aria-expanded={roleVisible} aria-controls="seabag-role"
+            onClick={() => setRoleVisible(visible => !visible)}>
+            {roleVisible ? '🔒 Hide role — close bag' : '👁 Show role — open bag'}
+          </button>
+          {roleVisible ? <div id="seabag-role">
           <div style={{ marginTop: 10 }}><FactionChip f={v.faction} /></div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{factionWin(v.faction)} · {SYMBOLS.gun} {v.guns}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{factionWin(v.faction)}</div>
           {/* A cultist converted mid-game recognises their master (rulebook p.15). */}
           {v.cultLeaderName &&
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--sea-4)', fontSize: 12 }}>
@@ -84,9 +93,13 @@ function PlayerBody({ v }: { v: PlayerView }) {
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--sea-4)', fontSize: 12 }}>
               You have converted: <b style={{ color: 'var(--cultist)' }}>{v.myConverts.join(', ')}</b>
             </div>}
+          </div> : <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Your role is hidden. Open your bag when you're ready to look.</p>}
+          <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{SYMBOLS.gun} {v.guns}</div>
           {!v.offDuty ? null : <div className="badge b-off" style={{ marginTop: 8, display: 'inline-block' }}>{SYMBOLS.offDuty} Off-duty this round</div>}
         </div>}
-      <Prompt v={v} />
+      {!roleVisible && privatePrompt ?
+        <div className="card center"><b>Your bag is closed</b><p className="sub">Open your bag to view private information or continue a private action.</p></div> :
+        <Prompt v={v} />}
     </div>
   );
 }

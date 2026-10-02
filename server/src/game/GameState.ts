@@ -599,8 +599,7 @@ export class Game {
     }
     this.addLog(`The ship sails ${dir.label.toLowerCase()} ${dir.symbol}.`);
     // Crossing the supply line refills every crew back up to three guns.
-    const beforeLevel = fromHex?.level ?? 0;
-    if (beforeLevel < map.supplyLineLevel && destHex.level >= map.supplyLineLevel) this.supplyLineRefill();
+    if (!fromHex?.beyondSupplyLine && destHex.beyondSupplyLine) this.supplyLineRefill();
   }
   private supplyLineRefill() {
     let given = 0;

@@ -48,7 +48,7 @@ export interface MapDef {
   layers: number[][];      // space numbers per layer, south to north
   hexes: Hex[];
   startId: string;
-  supplyLineLevel: number;
+  supplyLineLayer: number;
 }
 
 export const HEX_COORDS: Record<number, { col: number; level: number; layer: number }> = {
@@ -96,7 +96,8 @@ const VICTORY: Record<number, VictoryKind> = {
   28: 'cult',
   29: 'sailor', 30: 'sailor', 31: 'sailor',
 };
-const SUPPLY_LINE_LEVEL = 7;
+// The supply line follows the upper edges of layer 3, not a horizontal level.
+const SUPPLY_LINE_LAYER = 4;
 
 function buildMap(): MapDef {
   const hexes: Hex[] = [];
@@ -121,12 +122,12 @@ function buildMap(): MapDef {
       icon: ICONS[n],
       victory: VICTORY[n],
       start: n === 1,
-      beyondSupplyLine: coord.level >= SUPPLY_LINE_LEVEL,
+      beyondSupplyLine: coord.layer >= SUPPLY_LINE_LAYER,
     });
   }
 
   const levels = Math.max(...hexes.map(h => h.level));
-  return { id: 'standard', levels, layers, hexes, startId: '1', supplyLineLevel: SUPPLY_LINE_LEVEL };
+  return { id: 'standard', levels, layers, hexes, startId: '1', supplyLineLayer: SUPPLY_LINE_LAYER };
 }
 
 export const THE_MAP: MapDef = buildMap();
