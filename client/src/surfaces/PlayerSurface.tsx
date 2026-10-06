@@ -64,7 +64,21 @@ function Join({ onJoined }: { onJoined: () => void }) {
 }
 
 function PlayerBody({ v }: { v: PlayerView }) {
-  const [roleVisible, setRoleVisible] = useState(true);
+  const roleVisibilityKey = `ftk:roleVisible:${v.roomCode}:${v.seatId}`;
+  const [roleVisible, setRoleVisible] = useState(() => {
+    try {
+      return sessionStorage.getItem(roleVisibilityKey) !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(roleVisibilityKey, String(roleVisible));
+    } catch {
+      // Keep the toggle usable when browser storage is unavailable.
+    }
+  }, [roleVisibilityKey, roleVisible]);
   const privatePrompt = v.phase === 'pirateGathering' ||
     ['cultConvert', 'cultGuns', 'cultCabin', 'cabinResult'].includes(v.prompt.kind);
   return (
